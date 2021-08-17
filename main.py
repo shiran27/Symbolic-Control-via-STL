@@ -34,8 +34,8 @@ u_init = np.random.rand(u_init.shape[0])
 
 
 ## A simple gradient scheme:
-numOfSteps = 1000 
-stepSize = 0.5 #0.25, 0.5
+numOfSteps = 200  
+stepSize = 0.25 #0.25, 0.5
 precision = 0.01
 u_opt_flat = u_init
 u_opt_mat = u_opt_flat.reshape((2,T+1))
