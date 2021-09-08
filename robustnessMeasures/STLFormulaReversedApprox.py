@@ -1,11 +1,12 @@
 import autograd.numpy as np
+from robustnessMeasures.prelimFunctions import *
 
 class STLFormulaRA:
     """
     A class for standard smooth STL Formulas (using LSE based smooth-min and smooth-max operators). 
     """
 
-    def __init__(self, robustness, errorBand, parameters, robustnessGrad=[]):
+    def __init__(self, robustness, errorBand, parameters, paraAddresses = [], paraTypes=[], robustnessGrad=[]):
         """
         An STL Formula is initialized with a robustness function, error band function and parameters of smooth operators
         Arguments:
@@ -25,30 +26,51 @@ class STLFormulaRA:
         # self.maxOperatorBounds[0] = lambda k, m: -np.log(m)/k
         # self.maxOperatorBounds[1] = lambda k, m: 0
 
-        self.minOperatorK = 2.0
-        self.maxOperatorK = 2.0
+        self.minOperatorK = 3.0
+        self.maxOperatorK = 3.0
+
+        self.paraAddresses = paraAddresses # where to find tunable parameters (minOperatorK,maxOperatork): list of lists
+        self.paraTypes = paraTypes     # what type is each parameter (min or max, with how many parameters)
         
-        print("An STLFormulaRA object was created")
+        # print("An STLFormulaRA object was created")
+
 
     def smoothMinMaxOperatorBounds(minmax,lowup,x=[0,0,1]):
         if minmax == 0 and lowup == 0:      # min operator lower bound
             a_1 = max(x)
-            x.pop(x.index(a_1))
-            a_2 = max(x)
             a_m = min(x)
-            return lambda k, m, a_1=a_1, a_2=a_2, a_m=a_m: -(a_1-a_m)/((np.exp(-k*(a_1-a_2))/(m-1))+1) 
+
+            # x.pop(x.index(a_1))
+            # a_2 = max(x)
+            # return lambda k, m, a_1=a_1, a_2=a_2, a_m=a_m: -(a_1-a_m)/((np.exp(-k*(a_1-a_2))/(m-1))+1) 
+
+            # x = np.array(x) # the following bound is more tighter!
+            # return lambda k, m, a_1=a_1, a_m=a_m, x=x: -(a_1-a_m)*(np.sum(np.exp(-k*x)) - np.exp(-k*a_1))/(np.sum(np.exp(-k*x)))
+
+            xa_1 = np.array(x)-a_m # the following bound is more tighter!
+            # print(xa_1)
+            # print((1 - 1/(np.sum(np.exp(50*xa_1)))))
+            return lambda k, m, a_1=a_1, a_m=a_m, x=x: -(a_1-a_m)*(1 - 1/(np.sum(np.exp(-k*xa_1))))
+
         elif minmax == 0 and lowup == 1:    # min operator upper bound
             return lambda k, m: 0
         elif minmax == 1 and lowup == 0:    # max operator lower bound
             return lambda k, m: 0
         elif minmax == 1 and lowup == 1:    # max operator upper bound
             a_1 = max(x)
-            x.pop(x.index(a_1))
-            a_2 = max(x)
             a_m = min(x)
-            return lambda k, m, a_1=a_1, a_2=a_2, a_m=a_m: (a_1-a_m)/((np.exp(k*(a_1-a_2))/(m-1))+1)  
 
+            # x.pop(x.index(a_1))
+            # a_2 = max(x)
+            # return lambda k, m, a_1=a_1, a_2=a_2, a_m=a_m: (a_1-a_m)/((np.exp(k*(a_1-a_2))/(m-1))+1)  
 
+            # x = np.array(x) # the following bound is more tighter!
+            # return lambda k, m, a_1=a_1, a_m=a_m, x=x: (a_1-a_m)*(np.sum(np.exp(k*x)) - np.exp(k*a_1))/(np.sum(np.exp(k*x)))
+
+            xa_1 = np.array(x)-a_1 # the following bound is more tighter!
+            # print(xa_1)
+            # print((1 - 1/(np.sum(np.exp(50*xa_1)))))
+            return lambda k, m, a_1=a_1, a_m=a_m, x=x: (a_1-a_m)*(1 - 1/(np.sum(np.exp(k*xa_1))))
 
     def negation(self):
         """
@@ -57,6 +79,8 @@ class STLFormulaRA:
             rho(s,-phi,t) = -rho(s,phi,t)
         """        
         newParameters = self.parameters
+        newParaAddresses = self.paraAddresses
+        newParaTypes = self.paraTypes
 
         newRobustness = lambda s, t, theta : -self.robustness(s,t,theta)
         
@@ -66,7 +90,7 @@ class STLFormulaRA:
 
         newRobustnessGrad = lambda s, t, theta : - self.robustnessGrad(s,t,theta)
         
-        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newRobustnessGrad)
+        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newParaAddresses, newParaTypes, newRobustnessGrad)
 
 
     def conjunction(self, second_formula, k=-1):
@@ -83,6 +107,8 @@ class STLFormulaRA:
             k = self.minOperatorK
 
         newParameters = [self.parameters, second_formula.parameters, k] 
+        newParaAddresses = prepend(self.paraAddresses,0) + prepend(second_formula.paraAddresses,1)+[[2]]
+        newParaTypes = self.paraTypes + second_formula.paraTypes + [-2] #- signals that this is a min operator, magnitude indicates the num of elements 
 
         # new_robustness = lambda s, t : self.min_test( [self.robustness(s,t),second_formula.robustness(s,t)])
         newRobustness = lambda s, t, theta : STLFormulaRA.minFun([self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])], theta[2])        
@@ -93,9 +119,9 @@ class STLFormulaRA:
         maxBand = lambda s, t, theta: max(self.errorBand[1](s,t,theta[0]), second_formula.errorBand[1](s,t,theta[1])) + STLFormulaRA.smoothMinMaxOperatorBounds(0,1,[self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])])(theta[2],2)
         newErrorBand = [minBand, maxBand]
                
-        newRobustnessGrad = lambda s, t, theta : STLFormulaRA.getWeightedSum(STLFormulaRA.minFunGrad([self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])], theta[2]), [self.robustnessGrad(s,t,theta[0]), second_formula.robustnessGrad(s,t,theta[1])])   
+        newRobustnessGrad = lambda s, t, theta : getWeightedSum(STLFormulaRA.minFunGrad([self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])], theta[2]), [self.robustnessGrad(s,t,theta[0]), second_formula.robustnessGrad(s,t,theta[1])])   
 
-        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newRobustnessGrad)
+        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newParaAddresses, newParaTypes, newRobustnessGrad)
 
 
     def conjunction(formulas, k=-1):
@@ -106,8 +132,9 @@ class STLFormulaRA:
         if k==-1:
             k = formulas[0].minOperatorK
 
-        newParameters = [formulas[i].parameters for i in range(L)]
-        newParameters.append(k)
+        newParameters = [formulas[i].parameters for i in range(L)]+[k]
+        newParaAddresses = sum([prepend(formulas[i].paraAddresses,i) for i in range(L)],[])+[[L]]
+        newParaTypes = sum([formulas[i].paraTypes for i in range(L)],[])+[-L]
 
         # new_robustness = lambda s, t : min( self.robustness(s,t), second_formula.robustness(s,t) )
         newRobustness = lambda s, t, theta : STLFormulaRA.minFun([formulas[i].robustness(s,t,theta[i]) for i in range(L)], theta[L])   
@@ -118,9 +145,9 @@ class STLFormulaRA:
         maxBand = lambda s, t, theta : max([formulas[i].errorBand[1](s,t,theta[i]) for i in range(L)]) + STLFormulaRA.smoothMinMaxOperatorBounds(0,1,[formulas[i].robustness(s,t,theta[i]) for i in range(L)])(theta[L],L)             
         newErrorBand = [minBand, maxBand]        
 
-        newRobustnessGrad = lambda s, t, theta : STLFormulaRA.getWeightedSum(STLFormulaRA.minFunGrad([formulas[i].robustness(s,t,theta[i]) for i in range(L)], theta[L]), [formulas[i].robustnessGrad(s,t,theta[i]) for i in range(L)])   
+        newRobustnessGrad = lambda s, t, theta : getWeightedSum(STLFormulaRA.minFunGrad([formulas[i].robustness(s,t,theta[i]) for i in range(L)], theta[L]), [formulas[i].robustnessGrad(s,t,theta[i]) for i in range(L)])   
 
-        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newRobustnessGrad)
+        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newParaAddresses, newParaTypes, newRobustnessGrad)
 
 
     def disjunction(self, second_formula, k=-1): 
@@ -137,6 +164,8 @@ class STLFormulaRA:
             k = self.maxOperatorK
 
         newParameters = [self.parameters, second_formula.parameters, k] 
+        newParaAddresses = prepend(self.paraAddresses,0) + prepend(second_formula.paraAddresses,1)+[[2]]
+        newParaTypes = self.paraTypes + second_formula.paraTypes + [2] #- signals that this is a min operator, magnitude indicates the num of elements 
 
         # newRobustness = lambda s, t : STLFormulaRA.maxFun(self.robustness(s,t), second_formula.robustness(s,t))        
         newRobustness = lambda s, t, theta : STLFormulaRA.maxFun([self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])], theta[2])        
@@ -147,9 +176,9 @@ class STLFormulaRA:
         maxBand = lambda s, t, theta: max(self.errorBand[1](s,t,theta[0]), second_formula.errorBand[1](s,t,theta[1])) + STLFormulaRA.smoothMinMaxOperatorBounds(1,1,[self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])])(theta[2],2)
         newErrorBand = [minBand, maxBand]
 
-        newRobustnessGrad = lambda s, t, theta : STLFormulaRA.getWeightedSum(STLFormulaRA.maxFunGrad([self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])], theta[2]), [self.robustnessGrad(s,t,theta[0]), second_formula.robustnessGrad(s,t,theta[1])])   
+        newRobustnessGrad = lambda s, t, theta : getWeightedSum(STLFormulaRA.maxFunGrad([self.robustness(s,t,theta[0]), second_formula.robustness(s,t,theta[1])], theta[2]), [self.robustnessGrad(s,t,theta[0]), second_formula.robustnessGrad(s,t,theta[1])])   
 
-        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newRobustnessGrad)
+        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newParaAddresses, newParaTypes, newRobustnessGrad)
 
 
     def disjunction(formulas, k=-1):
@@ -160,8 +189,9 @@ class STLFormulaRA:
         if k==-1:
             k = formulas[0].maxOperatorK
 
-        newParameters = [formulas[i].parameters for i in range(L)]
-        newParameters.append(k)
+        newParameters = [formulas[i].parameters for i in range(L)]+[k]
+        newParaAddresses = sum([prepend(formulas[i].paraAddresses,i) for i in range(L)],[])+[[L]]
+        newParaTypes = sum([formulas[i].paraTypes for i in range(L)],[])+[L]
 
         # newRobustness = lambda s, t : STLFormulaRA.maxFun([formulas[i].robustness(s,t) for i in range(len(formulas))])        
         newRobustness = lambda s, t, theta : STLFormulaRA.maxFun([formulas[i].robustness(s,t,theta[i]) for i in range(L)], theta[L])   
@@ -172,9 +202,9 @@ class STLFormulaRA:
         maxBand = lambda s, t, theta : max([formulas[i].errorBand[1](s,t,theta[i]) for i in range(L)]) + STLFormulaRA.smoothMinMaxOperatorBounds(1,1,[formulas[i].robustness(s,t,theta[i]) for i in range(L)])(theta[L],L)             
         newErrorBand = [minBand, maxBand] 
 
-        newRobustnessGrad = lambda s, t, theta : STLFormulaRA.getWeightedSum(STLFormulaRA.maxFunGrad([formulas[i].robustness(s,t,theta[i]) for i in range(L)], theta[L]), [formulas[i].robustnessGrad(s,t,theta[i]) for i in range(L)])   
+        newRobustnessGrad = lambda s, t, theta : getWeightedSum(STLFormulaRA.maxFunGrad([formulas[i].robustness(s,t,theta[i]) for i in range(L)], theta[L]), [formulas[i].robustnessGrad(s,t,theta[i]) for i in range(L)])   
 
-        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newRobustnessGrad)
+        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newParaAddresses, newParaTypes, newRobustnessGrad)
 
 
     def eventually(self, t1, t2, k=-1):
@@ -193,6 +223,8 @@ class STLFormulaRA:
             k = self.maxOperatorK
 
         newParameters = [self.parameters, k]
+        newParaAddresses = prepend(self.paraAddresses,0)+[[1]]
+        newParaTypes = self.paraTypes + [1]
 
         # new_robustness = lambda s, t : self.max_test([ self.robustness(s,k) for k in range(t+t1, t+t2+1)])
         newRobustness = lambda s, t, theta : STLFormulaRA.maxFun([self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)], theta[1])        
@@ -203,9 +235,9 @@ class STLFormulaRA:
         maxBand = lambda s, t, theta : max([self.errorBand[1](s, tau, theta[0]) for tau in range(t+t1, t+t2+1)]) + STLFormulaRA.smoothMinMaxOperatorBounds(1,1,[self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)])(theta[1],L)       
         newErrorBand = [minBand, maxBand]
 
-        newRobustnessGrad = lambda s, t, theta : STLFormulaRA.getWeightedSum(STLFormulaRA.maxFunGrad([self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)], theta[1]), [self.robustnessGrad(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)])   
+        newRobustnessGrad = lambda s, t, theta : getWeightedSum(STLFormulaRA.maxFunGrad([self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)], theta[1]), [self.robustnessGrad(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)])   
 
-        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newRobustnessGrad)
+        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newParaAddresses, newParaTypes, newRobustnessGrad)
 
     def always(self, t1, t2, k=-1):
         """
@@ -223,6 +255,8 @@ class STLFormulaRA:
             k = self.minOperatorK
 
         newParameters = [self.parameters, k]
+        newParaAddresses = prepend(self.paraAddresses,0)+[[1]]
+        newParaTypes = self.paraTypes + [-1]
 
         # newRobustness = lambda s, t : STLFormulaRA.minFun([self.robustness(s,tau) for tau in range(t+t1, t+t2+1)])        
         newRobustness = lambda s, t, theta : STLFormulaRA.minFun([self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)], theta[1])        
@@ -233,9 +267,9 @@ class STLFormulaRA:
         maxBand = lambda s, t, theta : max([self.errorBand[1](s, tau, theta[0]) for tau in range(t+t1, t+t2+1)]) + STLFormulaRA.smoothMinMaxOperatorBounds(0,1,[self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)])(theta[1],L)       
         newErrorBand = [minBand, maxBand]
 
-        newRobustnessGrad = lambda s, t, theta : STLFormulaRA.getWeightedSum(STLFormulaRA.minFunGrad([self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)], theta[1]), [self.robustnessGrad(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)])   
+        newRobustnessGrad = lambda s, t, theta : getWeightedSum(STLFormulaRA.minFunGrad([self.robustness(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)], theta[1]), [self.robustnessGrad(s, tau, theta[0]) for tau in range(t+t1, t+t2+1)])   
 
-        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newRobustnessGrad)
+        return STLFormulaRA(newRobustness, newErrorBand, newParameters, newParaAddresses, newParaTypes, newRobustnessGrad)
         
     
     def minFun(x, theta):
@@ -246,7 +280,8 @@ class STLFormulaRA:
         k = theta
         
         x = np.array(x)
-        exp = np.exp(-k*x)
+        x_min = np.min(x)
+        exp = np.exp(-k*(x-x_min))
         return np.sum(x*exp)/np.sum(exp)
 
     def maxFun(x, theta):
@@ -257,7 +292,8 @@ class STLFormulaRA:
         k = theta
 
         x = np.array(x)
-        exp = np.exp(k*x)
+        x_max = np.max(x)
+        exp = np.exp(k*(x-x_max))
         return np.sum(x*exp)/np.sum(exp)
 
     def minFunGrad(x, theta):
@@ -265,9 +301,9 @@ class STLFormulaRA:
         Compute the gradient components (i.e., partial minFun / partial x), as an array (of length same as x)
         """
         k = theta
-
+        x_min = np.min(x)
         x = np.array(x)
-        return (1/np.sum(np.exp(-k*x)))*np.exp(-k*x)*(1-k*(x-STLFormulaRA.minFun(x,theta)))
+        return (1/np.sum(np.exp(-k*(x-x_min))))*np.exp(-k*(x-x_min))*(1-k*(x-STLFormulaRA.minFun(x,theta)))
 
     def maxFunGrad(x, theta):
         """
@@ -276,19 +312,8 @@ class STLFormulaRA:
         k = theta
 
         x = np.array(x)
-        return (1/np.sum(np.exp(k*x)))*np.exp(k*x)*(1-k*(STLFormulaRA.maxFun(x,theta)-x))
+        x_max = np.max(x)
+        return (1/np.sum(np.exp(k*(x-x_max))))*np.exp(k*(x-x_max))*(1-k*(STLFormulaRA.maxFun(x,theta)-x))
 
-    def getWeightedSum(scalarArray, matrixArray):
-        """
-        Returns the weghted sum matrix
-        """
-        P = len(matrixArray[0][0])
-        T = len(matrixArray[0])
-
-        sumVal = np.zeros((T,P))
-        for i in range(len(scalarArray)):
-            sumVal = sumVal + scalarArray[i]*matrixArray[i]
-
-        return sumVal
 
 

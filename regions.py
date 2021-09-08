@@ -146,10 +146,11 @@ class PolyRegion:
 
             # mu(x,y) > 0 is a predicate
             # signal: s = [x,y,u_x,u_y]_t for t=0,1,2,...,T
-            
             predicateErrorMagnitude = 0.01
             parameters = predicateErrorMagnitude # default parameter theta value 
-            
+            paraAddresses = [[]]
+            paraTypes = [0]
+
             # we can add a noise term here if we want based on the magnitude of theta
 
             # i is passed as a default variables
@@ -160,7 +161,7 @@ class PolyRegion:
             maxBand = lambda s, t, theta : theta
             predicateErrorBand = [minBand, maxBand] # errorbands in mu(x,y)
                         
-            STLFormulasForASide = STLFormulas(requiredMeasureTypes, predicateRobustness, predicateErrorBand, parameters, predicateRobustnessGrad)
+            STLFormulasForASide = STLFormulas(requiredMeasureTypes, predicateRobustness, predicateErrorBand, parameters, paraAddresses, paraTypes, predicateRobustnessGrad)
             STLFormulasCollection.append(STLFormulasForASide)
         
         return STLFormulasCollection
@@ -177,7 +178,9 @@ class PolyRegion:
             
             predicateErrorMagnitude = 0.01
             parameters = predicateErrorMagnitude # default parameter theta value 
-            
+            paraAddresses = [[]]
+            paraTypes = [0]
+
             # we can add a noise term here if we want based on the magnitude of theta
 
             # i is passed as a default variables (only dirrence compared to inRegion() is the -ve sign in following two lines)
@@ -188,7 +191,7 @@ class PolyRegion:
             maxBand = lambda s, t, theta : theta
             predicateErrorBand = [minBand, maxBand] # errorbands in mu(x,y)
                         
-            STLFormulasForASide = STLFormulas(requiredMeasureTypes, predicateRobustness, predicateErrorBand, parameters, predicateRobustnessGrad)
+            STLFormulasForASide = STLFormulas(requiredMeasureTypes, predicateRobustness, predicateErrorBand, parameters, paraAddresses, paraTypes, predicateRobustnessGrad)
             STLFormulasCollection.append(STLFormulasForASide)
         
         return STLFormulasCollection
@@ -203,6 +206,8 @@ class PolyRegion:
             
             predicateErrorMagnitude = 0.01
             parameters = predicateErrorMagnitude # default parameter theta value 
+            paraAddresses = [[]]
+            paraTypes = [0]
 
             # i is passed as a default variables
             predicateRobustness = lambda s, t, theta, i=i: self.predicates[i](s[t,2],s[t,3]) # we can add a noise term here if we want based on the magnitude of theta
@@ -212,7 +217,7 @@ class PolyRegion:
             maxBand = lambda s, t, theta : theta
             predicateErrorBand = [minBand, maxBand] # errorband in mu(x,y)
             
-            STLFormulasForASide = STLFormulas(requiredMeasureTypes, predicateRobustness, predicateErrorBand, parameters, predicateRobustnessGrad)
+            STLFormulasForASide = STLFormulas(requiredMeasureTypes, predicateRobustness, predicateErrorBand, parameters, paraAddresses, paraTypes, predicateRobustnessGrad)
             STLFormulasCollection.append(STLFormulasForASide)
 
         return STLFormulasCollection

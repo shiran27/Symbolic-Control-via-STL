@@ -17,32 +17,32 @@ from robustnessMeasures.STLFormulaReversedApprox import STLFormulaRA
 
 class STLFormulas:
 
-    def __init__(self, requiredMeasureTypes, robustness, errorBand, parameters, robustnessGrad):
+    def __init__(self, requiredMeasureTypes, robustness, errorBand, parameters, paraAddresses, paraTypes, robustnessGrad):
 
         self.requiredMeasureTypes = requiredMeasureTypes
         
         objectCollection = []
         for i in requiredMeasureTypes:
             if i == 0:
-                objectValue = STLFormulaNS(robustness, errorBand, parameters, robustnessGrad)
+                objectValue = STLFormulaNS(robustness, errorBand, parameters, paraAddresses, paraTypes, robustnessGrad)
             elif i == 1:
-                objectValue = STLFormulaSA(robustness, errorBand, parameters, robustnessGrad)
+                objectValue = STLFormulaSA(robustness, errorBand, parameters, paraAddresses, paraTypes, robustnessGrad)
             elif i == 2:
-                objectValue = STLFormulaUA(robustness, errorBand, parameters, robustnessGrad)
+                objectValue = STLFormulaUA(robustness, errorBand, parameters, paraAddresses, paraTypes, robustnessGrad)
             elif i == 3:
-                objectValue = STLFormulaOA(robustness, errorBand, parameters, robustnessGrad)
+                objectValue = STLFormulaOA(robustness, errorBand, parameters, paraAddresses, paraTypes, robustnessGrad)
             elif i == 4:
-                objectValue = STLFormulaRA(robustness, errorBand, parameters, robustnessGrad)
+                objectValue = STLFormulaRA(robustness, errorBand, parameters, paraAddresses, paraTypes, robustnessGrad)
 
             objectCollection.append(objectValue)
         
         self.STLFormulaObjects = objectCollection
 
-        print("An STLFormulaSSS object was created")
+        # print("An STLFormulaSSS object was created")
 
-
+   
     def constructAnObject(requiredMeasureTypes, objectCollection):
-        newSTLFormulas = STLFormulas(requiredMeasureTypes,[],[],[],[])
+        newSTLFormulas = STLFormulas(requiredMeasureTypes,[],[],[],[],[],[])
         newSTLFormulas.STLFormulaObjects = objectCollection
         return newSTLFormulas
 

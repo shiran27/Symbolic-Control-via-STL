@@ -5,7 +5,7 @@ class STLFormulaNS:
     A class for actual non-smooth STL Formulas. 
     """
 
-    def __init__(self, robustness, errorBand, parameters, robustnessGrad=[]):
+    def __init__(self, robustness, errorBand, parameters, paraAddresses = [], paraTypes=[], robustnessGrad=[]):
         """
         An STL Formula is initialized with a robustness function, error band function and parameters of smooth operators
         Arguments:
@@ -19,7 +19,7 @@ class STLFormulaNS:
         self.parameters = parameters
         self.robustnessGrad = robustnessGrad
         
-        print("An STLFormulaNS object was created")
+        # print("An STLFormulaNS object was created")
 
 
     def negation(self):

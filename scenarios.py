@@ -10,13 +10,14 @@ import time
 from copy import copy
 import numpy as np
 # import autograd.numpy as np
+from numpy import linalg as LA 
 
 from matplotlib.patches import Rectangle
-
+from autograd import grad
 
 from regions import PolyRegion
 from STLMainClass import STLFormulas
-
+from simulations import DataCollector
 
 class ReachAvoid:
     
@@ -67,8 +68,10 @@ class ReachAvoid:
 
         ## Full specification
         fullSpec = [self.avoidedObstacle, self.reachedGoal, self.boundedControl]
+        
         self.fullSpec = STLFormulas.conjunction(fullSpec, requiredMeasureTypes)
 
+        self.flushParameterAddresses()
 
         self.transferMatrixYtoU = ReachAvoid.getTransferMatrixYtoU(T)
 
@@ -86,18 +89,38 @@ class ReachAvoid:
         """
         ax.set_xlim((0,10))  #(0,12)
         ax.set_ylim((0,10))
+        ax.axis('equal')
 
         for poly in self.regions:
             poly.draw(ax)
 
     
+    def flushParameterAddresses(self):
+
+        # fullspec
+        for measureTypeIndex in range(len(self.fullSpec.STLFormulaObjects)):
+            if self.fullSpec.requiredMeasureTypes[measureTypeIndex] == 0:
+                continue
+
+            paraTypes = self.fullSpec.STLFormulaObjects[measureTypeIndex].paraTypes
+            paraAddresses = self.fullSpec.STLFormulaObjects[measureTypeIndex].paraAddresses
+            numParatypes = len(paraTypes)
+            
+            paraTypesNew = [paraTypes[i] for i in range(numParatypes) if paraTypes[i]!=0]
+            paraAddressesNew = [paraAddresses[i] for i in range(numParatypes) if paraTypes[i]!=0]
+
+            self.fullSpec.STLFormulaObjects[measureTypeIndex].paraTypes = paraTypesNew
+            self.fullSpec.STLFormulaObjects[measureTypeIndex].paraAddresses = paraAddressesNew
+
+
     def plotControlProfile(self, u, ax, label=None):
         ax.set_xlim((-2,2)) 
         ax.set_ylim((-2,2))
+        ax.axis('equal')
         self.controlBounds.draw(ax)
 
         ax.plot(u[0,:], u[1,:], label=label, linestyle="-", marker=".")
-        ax.grid()
+        # ax.grid()
         ax.set_xlabel("u_x")
         ax.set_ylabel("u_y")
 
@@ -205,12 +228,92 @@ class ReachAvoid:
         # return spec.errorBand[0](signal.T, 0, spec.parameters) 
         return [spec.errorBand[0](signal.T, 0, spec.parameters), spec.errorBand[1](signal.T, 0, spec.parameters)] 
         
-    
+    def getErrorBandWidth(self, controlInput, measureType, kValueArray):
+
+        signal = self.getSignal(controlInput)
+        measureTypeIndex = self.requiredMeasureTypes.index(measureType)
+        spec = self.fullSpec.STLFormulaObjects[measureTypeIndex]
+        
+        if len(kValueArray)!=0:
+                    
+            parameters = spec.parameters
+            paraAddresses = spec.paraAddresses
+            paraTypes = spec.paraTypes
+
+            newParameters = DataCollector.setValueArray(kValueArray, parameters, paraAddresses, paraTypes)
+            self.fullSpec.STLFormulaObjects[measureTypeIndex].parameters = newParameters
+            spec = self.fullSpec.STLFormulaObjects[measureTypeIndex]
+
+        return -spec.errorBand[0](signal.T, 0, spec.parameters) + spec.errorBand[1](signal.T, 0, spec.parameters)
+
+
+    def tuneKParameters(self, controlInput, measureType, numInterations):
+
+        # function and gradient
+        def errorBandWidthCost(kValueArray, u=controlInput, measureType=measureType):
+            return self.getErrorBandWidth(u, measureType, kValueArray)+0*kValueArray.mean() #OA
+            # return self.getErrorBandWidth(u, measureType, kValueArray)+5*kValueArray.mean() #UA
+            # return self.getErrorBandWidth(u, measureType, kValueArray)+0.05*kValueArray.mean() #RA
+
+        errorBandWidthCostGrad = grad(errorBandWidthCost)
+        
+        
+        # current k value
+        measureTypeIndex = self.requiredMeasureTypes.index(measureType)
+        kValueArray = [] 
+        for address in self.fullSpec.STLFormulaObjects[measureTypeIndex].paraAddresses:
+            parameters = self.fullSpec.STLFormulaObjects[measureTypeIndex].parameters
+            kVal = DataCollector.getValue(parameters,address)
+            kValueArray.append(kVal)
+
+        kValueArray = np.asarray(kValueArray)
+
+        # GD parameters
+        precision = 0.01
+        kMax = 15.0
+        kMin = 0.1
+        stepSize = 2
+
+        kInit = kValueArray
+        
+        controlInput_mat = controlInput.reshape((2,self.T+1))
+        initBand = self.getErrorBand(controlInput_mat,measureType)
+        initWidth = self.getErrorBandWidth(controlInput_mat, measureType, kValueArray)
+        oldWidth = initWidth
+        for i in range(numInterations):
+            gradVal = errorBandWidthCostGrad(kValueArray,controlInput_mat,measureType)
+            newkValueArray = kValueArray - stepSize*gradVal
+            newkValueArray[newkValueArray>kMax] = kMax
+            newkValueArray[newkValueArray<kMin] = kMin
+            kValueArray = newkValueArray
+
+            width = self.getErrorBandWidth(controlInput_mat, measureType, kValueArray)
+            normGrad = LA.norm(gradVal)
+            widthImprovement = oldWidth - width
+            oldWidth = width
+            print("i = "+str(i)+"; errot band width = "+"{:.3f}".format(width)+"; normGrad="+"{:.4f}".format(normGrad)+"; widthImpr.="+"{:.4f}".format(widthImprovement))
+            # print("k="+"".join(["{:.3f}".format(kValueArray[j])+", " for j in range(len(kValueArray))]))
+
+            if widthImprovement<precision and normGrad<precision:
+                # print(gradVal)
+                print("Local optimum reached at iteration %i" %i)
+                break
+                
+        # print("Old and new k values: ")
+        print("k="+"".join(["{:.3f}".format(kInit[j])+", " for j in range(len(kInit))]))
+        print("k="+"".join(["{:.3f}".format(kValueArray[j])+", " for j in range(len(kValueArray))]))
+        print("Old and new errro bands: ")
+        print(initBand)
+        print(self.getErrorBand(controlInput_mat,measureType))
+        print("Total Improvement="+str(initWidth-width))
+
+
     def getTransferMatrixYtoU(T):
         # transfer matrix required for partial y / partial u
         I = np.eye(2)
         O = np.zeros((2,2))
-        return np.block([[I if t>tau else O for tau in range(T+1)] for t in range(T+1)])
+        # return np.block([[I if t>tau else O for tau in range(T+1)] for t in range(T+1)])
+        return np.block([[I if t>tau and tau>0 else O for tau in range(T+1)] for t in range(T+1)])
 
 
     def getRobustnessGrad(self, controlInput, measureType, spec=None):
@@ -239,8 +342,12 @@ class ReachAvoid:
         actualGrad = robustnessGradU + np.reshape( robustnessGradY.flatten()@self.transferMatrixYtoU, (len(signal.T),2))
 
         costFunctionGrad = 2*0.01*controlInput.T - actualGrad  
+        
 
         return costFunctionGrad.T
+
+
+      
 
 
     def costFunction(self, controlInput, measureType, spec=None):
@@ -280,7 +387,7 @@ class ReachAvoidAdv(ReachAvoid):
 
 
         # vertices are given in the counterclockwise order, nx2 list, polygon should be convex
-        obs1 = PolyRegion(1,'Obs.1',PolyRegion.getPolyCoordinates([3,3],6,1.5),'red',0.5)
+        obs1 = PolyRegion(1,'Obs.1',PolyRegion.getPolyCoordinates([4,4],6,1.5),'red',0.5)
         obs2 = PolyRegion(2,'Obs.2',PolyRegion.getPolyCoordinates([7.2,4.8],4,1),'red',0.5)
         obs3 = PolyRegion(3,'Obs.3',PolyRegion.getPolyCoordinates([4.8,7.2],4,1),'red',0.5)
         goal = PolyRegion(4,'Goal',PolyRegion.getPolyCoordinates([9,9],3,0.75,np.pi/4),'green',0.5)
@@ -322,6 +429,7 @@ class ReachAvoidAdv(ReachAvoid):
         fullSpec = [self.avoidedObstacle, self.reachedGoal, self.boundedControl]
         self.fullSpec = STLFormulas.conjunction(fullSpec, requiredMeasureTypes)
 
+        self.flushParameterAddresses()
 
         self.transferMatrixYtoU = ReachAvoid.getTransferMatrixYtoU(T)
 
@@ -331,5 +439,167 @@ class ReachAvoidAdv(ReachAvoid):
         self.requiredMeasureTypes = requiredMeasureTypes
 
 
+class FollowTrajectory(ReachAvoid):
+
+    def __init__(self, initial_state, T=20):
+        """
+        Set up the example scenario with the initial state, which should be a (4,1) numpy
+        array with [x,x',y,y'].
+        """
+        
+        self.x0 = np.asarray(initial_state)
+        self.T = T  # The time bound of our specification
 
 
+        # vertices are given in the counterclockwise order, nx2 list, polygon should be convex
+        obs1 = PolyRegion(1,'Obs.1',PolyRegion.getPolyCoordinates([5,5],7,1.5),'red',0.5)
+        goal1 = PolyRegion(2,'Goal1',PolyRegion.getPolyCoordinates([5,2],3,1.5,0.1),'green',0.5)
+        goal2 = PolyRegion(3,'Goal2',PolyRegion.getPolyCoordinates([8,5],3,1.5,np.pi/2+0.1),'green',0.5)
+        goal3 = PolyRegion(4,'Goal3',PolyRegion.getPolyCoordinates([5,8],3,1.5,np.pi+0.1),'green',0.5)
+        
+        uMin, uMax = -2.0, 2.0        
+        controlBounds = PolyRegion(5,'Control',[[uMin,uMin],[uMax,uMin],[uMax,uMax],[uMin,uMax]],'green',0.5)
+                
+        requiredMeasureTypes = [0,1,2,3,4] # 0: absolut, 1:Std smooth, 2:Under Approx, 3:Over Approx, 4: Reveresd
+        
+        # Now we'll define the STL specification. We'll do this over
+        # the signal s, which is a list of x, y coordinates and the controls u_x, u_y
+        # input u at each timestep. 
+
+        # Negation can only be used with predicates, because, specs must be in "Disjunctive normal form"
+
+        ## Avoiding the obstacle
+        avoidedObstacle = obs1.outRegion(requiredMeasureTypes) # we get a list of STLFormula collections 
+        self.avoidedObstacle = STLFormulas.disjunction(avoidedObstacle, requiredMeasureTypes).always(0, self.T) # we get one STLFormula collection
+
+        t1 = self.T//3
+        t2 = 2*self.T//3
+        t3 = 3*self.T//4 
+
+        # ## Reaching the Goal
+        reachedGoal1 = goal1.inRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        reachedGoal11 = STLFormulas.conjunction(reachedGoal1, requiredMeasureTypes).eventually(0, t1) # we get one STLFormula collection
+
+        reachedGoal2 = goal2.inRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        reachedGoal22 = STLFormulas.conjunction(reachedGoal2, requiredMeasureTypes).eventually(t1, t2) # we get one STLFormula collection
+
+        reachedGoal3 = goal3.inRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        # reachedGoal33 = STLFormulas.conjunction(reachedGoal3, requiredMeasureTypes).eventually(t2, t3) # we get one STLFormula collection
+        reachedGoal33 = STLFormulas.conjunction(reachedGoal3, requiredMeasureTypes).eventually(t2+2, self.T) # we get one STLFormula collection
+
+        
+        reachedGoal = [reachedGoal11, reachedGoal22, reachedGoal33]
+        self.reachedGoal = STLFormulas.conjunction(reachedGoal, requiredMeasureTypes) # we get one STLFormula collection
+
+        ## Bounding the control
+        boundedControl = controlBounds.inControlRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        self.boundedControl = STLFormulas.conjunction(boundedControl, requiredMeasureTypes).always(0, self.T) # we get one STLFormula collection
+
+        ## Full specification
+        fullSpec = [self.avoidedObstacle, self.reachedGoal, self.boundedControl]
+        # fullSpec = [self.reachedGoal, self.boundedControl]
+        # fullSpec = [self.avoidedObstacle,self.boundedControl]
+        # fullSpec = [self.reachedGoal]
+        self.fullSpec = STLFormulas.conjunction(fullSpec, requiredMeasureTypes)
+
+        self.flushParameterAddresses()
+
+        self.transferMatrixYtoU = ReachAvoid.getTransferMatrixYtoU(T)
+
+        # self.regions = [obstacle, goal, aux]
+        # self.regions = [obs1,goal1,goal2,goal3,goal4]
+        self.regions = [obs1,goal1,goal2,goal3]
+        self.controlBounds = controlBounds
+        self.requiredMeasureTypes = requiredMeasureTypes
+
+
+class FollowTrajectoryAdv(ReachAvoid):
+
+    def __init__(self, initial_state, T=20):
+        """
+        Set up the example scenario with the initial state, which should be a (4,1) numpy
+        array with [x,x',y,y'].
+        """
+        
+        self.x0 = np.asarray(initial_state)
+        self.T = T  # The time bound of our specification
+
+
+        # vertices are given in the counterclockwise order, nx2 list, polygon should be convex
+        obs1 = PolyRegion(1,'Obs.1',PolyRegion.getPolyCoordinates([5,1.25],4,1),'red',0.5)
+        obs2 = PolyRegion(2,'Obs.2',PolyRegion.getPolyCoordinates([5,3.75],4,1),'red',0.5)
+        obs3 = PolyRegion(3,'Obs.3',PolyRegion.getPolyCoordinates([5,6.25],4,1),'red',0.5)
+        obs4 = PolyRegion(4,'Obs.4',PolyRegion.getPolyCoordinates([5,8.75],4,1),'red',0.5)
+        obs5 = PolyRegion(5,'Obs.5',PolyRegion.getPolyCoordinates([7.5,5],4,1.25),'red',0.5)
+        obs6 = PolyRegion(6,'Obs.6',PolyRegion.getPolyCoordinates([2.5,5],4,1.25),'red',0.5)
+        goal1 = PolyRegion(7,'Goal1',PolyRegion.getPolyCoordinates([7.5,2.5],3,1.2,np.pi/4),'green',0.5)
+        goal2 = PolyRegion(8,'Goal2',PolyRegion.getPolyCoordinates([7.5,7.5],3,1.2,3*np.pi/4),'green',0.5)
+        goal3 = PolyRegion(9,'Goal3',PolyRegion.getPolyCoordinates([2.5,7.5],3,1.2,5*np.pi/4),'green',0.5)
+        
+        uMin, uMax = -2.0, 2.0        
+        controlBounds = PolyRegion(5,'Control',[[uMin,uMin],[uMax,uMin],[uMax,uMax],[uMin,uMax]],'green',0.5)
+                
+        requiredMeasureTypes = [0,1,2,3,4] # 0: absolut, 1:Std smooth, 2:Under Approx, 3:Over Approx, 4: Reveresd
+        
+        # Now we'll define the STL specification. We'll do this over
+        # the signal s, which is a list of x, y coordinates and the controls u_x, u_y
+        # input u at each timestep. 
+
+        # Negation can only be used with predicates, because, specs must be in "Disjunctive normal form"
+
+        ## Avoiding the obstacle
+        missObs1 = obs1.outRegion(requiredMeasureTypes) # we get a list of STLFormula collections 
+        avoidObs1 = STLFormulas.disjunction(missObs1, requiredMeasureTypes)
+        missObs2 = obs2.outRegion(requiredMeasureTypes) # we get a list of STLFormula collections 
+        avoidObs2 = STLFormulas.disjunction(missObs2, requiredMeasureTypes)
+        missObs3 = obs3.outRegion(requiredMeasureTypes) # we get a list of STLFormula collections 
+        avoidObs3 = STLFormulas.disjunction(missObs3, requiredMeasureTypes)
+        missObs4 = obs4.outRegion(requiredMeasureTypes) # we get a list of STLFormula collections 
+        avoidObs4 = STLFormulas.disjunction(missObs4, requiredMeasureTypes)
+        missObs5 = obs5.outRegion(requiredMeasureTypes) # we get a list of STLFormula collections 
+        avoidObs5 = STLFormulas.disjunction(missObs5, requiredMeasureTypes)
+        missObs6 = obs6.outRegion(requiredMeasureTypes) # we get a list of STLFormula collections 
+        avoidObs6 = STLFormulas.disjunction(missObs6, requiredMeasureTypes)
+
+        avoidedObstacle = [avoidObs1,avoidObs2,avoidObs3,avoidObs4,avoidObs5,avoidObs6]
+        self.avoidedObstacle = STLFormulas.conjunction(avoidedObstacle, requiredMeasureTypes).always(0, self.T) # we get one STLFormula collection
+        
+        t1 = self.T//3
+        t2 = 2*self.T//3
+        
+
+        # ## Reaching the Goal
+        reachedGoal1 = goal1.inRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        reachedGoal11 = STLFormulas.conjunction(reachedGoal1, requiredMeasureTypes).eventually(0, t1) # we get one STLFormula collection
+
+        reachedGoal2 = goal2.inRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        reachedGoal22 = STLFormulas.conjunction(reachedGoal2, requiredMeasureTypes).eventually(t1, t2) # we get one STLFormula collection
+
+        reachedGoal3 = goal3.inRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        # reachedGoal33 = STLFormulas.conjunction(reachedGoal3, requiredMeasureTypes).eventually(t2, t3) # we get one STLFormula collection
+        reachedGoal33 = STLFormulas.conjunction(reachedGoal3, requiredMeasureTypes).eventually(t2, self.T) # we get one STLFormula collection
+
+        # reachedGoal = [reachedGoal11, reachedGoal22, reachedGoal33, reachedGoal44]
+        reachedGoal = [reachedGoal11, reachedGoal22, reachedGoal33]
+        self.reachedGoal = STLFormulas.conjunction(reachedGoal, requiredMeasureTypes) # we get one STLFormula collection
+
+        ## Bounding the control
+        boundedControl = controlBounds.inControlRegion(requiredMeasureTypes) # we get a list of STLFormula collections
+        self.boundedControl = STLFormulas.conjunction(boundedControl, requiredMeasureTypes).always(0, self.T) # we get one STLFormula collection
+
+        ## Full specification
+        fullSpec = [self.avoidedObstacle, self.reachedGoal, self.boundedControl]
+        # fullSpec = [self.reachedGoal, self.boundedControl]
+        # fullSpec = [self.avoidedObstacle,self.boundedControl]
+        # fullSpec = [self.reachedGoal]
+        self.fullSpec = STLFormulas.conjunction(fullSpec, requiredMeasureTypes)
+
+        self.flushParameterAddresses()
+
+        self.transferMatrixYtoU = ReachAvoid.getTransferMatrixYtoU(T)
+
+        # self.regions = [obstacle, goal, aux]
+        # self.regions = [obs1,goal1,goal2,goal3,goal4]
+        self.regions = [obs1,obs2,obs3,obs4,obs5,obs6,goal1,goal2,goal3]
+        self.controlBounds = controlBounds
+        self.requiredMeasureTypes = requiredMeasureTypes

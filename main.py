@@ -9,18 +9,20 @@ from autograd import grad
 from simulations import DataCollector
 
 # The detailed implementation of this scenario is defined here:
-from scenarios import ReachAvoid 
-from scenarios import ReachAvoidAdv 
+from scenarios import *
+
 
 # initialize the example with an initial state
-T = 20   #20 number of timesteps
+T = 20  #15, 20 number of timesteps
 x0 = np.asarray([0,0])[:,np.newaxis] # [0.5,5] for ReachAvoid4
 # scenario = ReachAvoid(x0,T)
 scenario = ReachAvoidAdv(x0,T)
+# scenario = FollowTrajectory(x0,T)
+# scenario = FollowTrajectoryAdv(x0,T)
 
 # Autograd based and Explicit Gradient
-measureType = 2 # 0: Non-Smooth, 1: Standard Smooth, 2: Under Approx, 3: Over Approx, 4: Reversed Standard
-def costFunction(u):
+measureType = 1 # 0: Non-Smooth, 1: Standard Smooth, 2: Under Approx, 3: Over Approx, 4: Reversed Standard
+def costFunction(u,measureType=measureType):
     return scenario.costFunction(u,measureType)
 
 costFunctionAutoGrad = grad(costFunction)
@@ -32,20 +34,33 @@ np.random.seed(7)
 u_init = np.zeros((2,T+1)).flatten()   # initial guess
 u_init = np.random.rand(u_init.shape[0])
 
+# initialization
+# measureTypeInit = 4
+# def costFunctionInit(u,measureTypeInit=measureTypeInit):
+#     return scenario.costFunction(u,measureTypeInit)
+
+# costFunctionExplicitGradInit = lambda u_opt_flat, measureType=measureTypeInit, T=T: scenario.getRobustnessGrad(u_opt_flat.reshape((2,T+1)), measureType).flatten()
+
+# sol = minimize(costFunctionInit, u_init,
+#         jac = costFunctionExplicitGradInit, # this is the function that gives the gradient (now, given by autograd library)
+#         method='SLSQP')
+# u_init = sol.x
+# end initialization
 
 ## A simple gradient scheme:
-numOfSteps = 200  
-stepSize = 0.25 #0.25, 0.5
-precision = 0.01
+numOfSteps = 500 #200
+stepSize = 0.25 #0.02 (SA), 0.25, 0.5
+precision = 0.05 #0.05, 0.01
 u_opt_flat = u_init
 u_opt_mat = u_opt_flat.reshape((2,T+1))
 
 # plotting control
 figu, axesu = plt.subplots(nrows=1, ncols=3, sharex=False, sharey=False)
 scenario.plotControlProfile(u_opt_mat, axesu[0], "Initial")
-plt.show(block = False)
+# plt.show(block = False)
 # axu.plot(u_opt_mat[0,:].tolist(), u_opt_mat[1,:].tolist(), label="Initial", linestyle="-", marker=".")
 
+plotMode = 1
 
 ### Lets use a data collection mechanism with preallocated everything
 names = ["Total Cost","Control Cost","Robustness Cost","Control Robustness","Obstacle Robustness","Goal Robustness",\
@@ -63,37 +78,44 @@ dataset3 = DataCollector(numOfSteps,shortNames3)
 
 stepNumber = 0
 boost_mode = 0
-fig, axes = plt.subplots(nrows=2, ncols=4, sharex=False, sharey=False)
+fig, axes = plt.subplots(1)
 
 start_time = time.time()
 for i in range(numOfSteps):
 
     if boost_mode==0 or boost_mode==2:
-        gradVal = costFunctionExplicitGrad(u_opt_flat)
-        # gradVal = costFunctionAutoGrad(u_opt_flat)
+        # measureType = 2+(i//10)%2
+        # measureType = 1+3*(i//30)%2
+        gradVal = costFunctionExplicitGrad(u_opt_flat,measureType)
+        # gradVal = costFunctionAutoGrad(u_opt_flat,measureType)
     elif boost_mode==1:
-        gradVal = costFunctionExplicitGrad(u_opt_flat,measureType+1)
+        gradVal = costFunctionExplicitGrad(u_opt_flat,4)
 
     if boost_mode==0 and LA.norm(gradVal)<precision:
         print("Local optimum reached at iteration %i" %i)
-        boost_mode = 1; # use 2; to avoid boosting 
-        stepNumber = 0;
-        # break
+        boost_mode = 2 # use 2; to avoid boosting 
+        stepNumber = 0
+        # measureType = 3 # comment this to avoid boosting 
+        
     elif boost_mode==1 and LA.norm(gradVal)<precision:
         print("Boost Mode Ended at iteration %i" %i)
-        boost_mode = 2;
-        stepNumber = 0;
+        boost_mode = 2
+        stepNumber = 0
+        measureType = 2
 
     elif boost_mode==2 and LA.norm(gradVal)<precision:
         print("Local optimum reached at iteration %i" %i)
-        boost_mode = 0;
-        stepNumber = 0;
+        boost_mode = 0
+        stepNumber = 0
         break
 
     u_opt_flat = u_opt_flat - (stepSize/np.power(stepNumber+1,0.25))*gradVal
+    # u_opt_flat = u_opt_flat - (stepSize/np.power(stepNumber+1,0.01))*gradVal
     stepNumber = stepNumber + 1
 
-
+    if (i+1)%25==0:
+        # Tune parameters (i.e., k values) based on u_init and measuretype
+        scenario.tuneKParameters(u_opt_flat, measureType, 50)
 
     ### Start Data Collecting
     ## First dataset: ["Tot. C.", "Con. C.", "Rob. C.","Con. R.","Obs. R.","Goal R.","Std. Rob. C.","Std. Con. R.","Std. Obs. R.","Std. Goal. R."]
@@ -118,8 +140,8 @@ for i in range(numOfSteps):
     
     
     ## Second data set: ["EGradN","AGradN","RMSE","RMSEN","Approx. Rob.","Err. L.","Err. H.","Std. Rob.", "Std. Err. L.","Std. Err. H."]
-    gradValE = costFunctionExplicitGrad(u_opt_flat)
-    gradValA = costFunctionAutoGrad(u_opt_flat)
+    gradValE = costFunctionExplicitGrad(u_opt_flat,measureType)
+    gradValA = costFunctionAutoGrad(u_opt_flat,measureType)
     errorMat = (gradValE-gradValA).flatten()
     EGradN = LA.norm(gradValE) 
     AGradN = LA.norm(gradValA) 
@@ -153,20 +175,19 @@ for i in range(numOfSteps):
     # dataset3.printDataset(i,'')
     ### End Data Collecting
 
-    if i % 20==0:
+    if plotMode>0 and i % 10==0:
         # Plot the results
-        if int(i/20) <= 7 :
-            plotNumber = int(i/20)
-            if plotNumber<=3:
-                ax = axes[0,plotNumber]
-            else:
-                ax = axes[1,plotNumber-4]
-            ax.set_title("i: %i; Cost %1.3f; con.C %1.3f; rob.C %1.3f; \n con.R %1.3f; obs.R %1.3f; Goal.R %1.3f" %(i,costValue,controlCost,robustnessCost,controlRobustness,obstacleRobustness,goalRobustness))
-            
-            scenario.plotTrajectory(u_opt_mat, ax)
-            plt.xlim([-1,10])
-            # fig.canvas.draw()
-            plt.show(block = False)
+        ax = axes
+        ax.set_title("i: %i; Cost %1.3f; con.C %1.3f; rob.C %1.3f; \n con.R %1.3f; obs.R %1.3f; Goal.R %1.3f" %(i,costValue,controlCost,robustnessCost,controlRobustness,obstacleRobustness,goalRobustness))
+        scenario.plotTrajectory(u_opt_mat, ax)
+        plt.xlim([-1,10])
+        plt.draw()
+        plt.pause(0.1)
+        scenario.plotControlProfile(u_opt_mat, axesu[1], "Initial")
+        plt.draw()
+        plt.pause(0.5)
+        axesu[1].lines[0].remove()
+        ax.lines[0].remove()
             
 
 end_time = time.time()
@@ -242,8 +263,6 @@ axes[2].fill_between(range(numOfStepsRan), dataset3.dataset[7], dataset3.dataset
 axes[2].plot(range(numOfStepsRan),dataset3.dataset[15], linestyle="-", color="k")
 axes[2].fill_between(range(numOfStepsRan), dataset3.dataset[16], dataset3.dataset[17], alpha=0.2, color="k")
 ### End Data
-
-
 
 
 # Plot the results
