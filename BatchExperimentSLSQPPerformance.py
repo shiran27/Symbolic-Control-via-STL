@@ -31,13 +31,13 @@ for realization in range(numOfRealizations):
     x0 = np.asarray([0,0])[:,np.newaxis] # [0.5,5] for ReachAvoid4
     # x0 = np.asarray(np.random.rand(2))[:,np.newaxis]
 
-    scenario = ReachAvoid(x0,T)
-    # scenario = ReachAvoidAdv(x0,T)
-    # scenario = FollowTrajectory(x0,T)
-    # scenario = FollowTrajectoryAdv(x0,T)
+    scenario = ReachAvoid(x0,T)           # Exp4
+    # scenario = ReachAvoidAdv(x0,T)        # Exp3
+    # scenario = FollowTrajectory(x0,T)       # Exp2
+    # scenario = FollowTrajectoryAdv(x0,T)  # Exp1
 
     # Autograd based and Explicit Gradient
-    measureType = 3 # 0: Non-Smooth, 1: Standard Smooth, 2: Under Approx, 3: Over Approx, 4: Reversed Standard
+    measureType = 1 # 0: Non-Smooth, 1: Standard Smooth, 2: Under Approx, 3: Over Approx, 4: Reversed Standard
     def costFunction(u,measureType=measureType):
         return scenario.costFunction(u,measureType)
         # return (scenario.costFunction(u,2) + scenario.costFunction(u,3))/2
@@ -143,16 +143,16 @@ for realization in range(numOfRealizations):
     # plt.show()
 
     fig1, ax1 = plt.subplots(1)
-    ax1.set_title("OA_50 Method: Realization "+str(realization)+"; Robustness "+str(robustnessCostStd))
+    ax1.set_title("SA_AG Method: Realization "+str(realization)+"; Robustness "+str(robustnessCostStd))
     scenario.plotTrajectory(u_opt_mat,ax1)
-    plt.savefig('Data/Exp4_k/OA_50Fig'+str(realization)+'.png')
+    plt.savefig('Data/Exp4/SA_AGFig'+str(realization)+'.png')
 
 
 
 data = np.asarray(dataMatrix)
-save('Data/Exp4_k/OA_50Data.npy', data)
+save('Data/Exp4/SA_AGData.npy', data)
 
-data = load('Data/Exp4_k/OA_50Data.npy')
+data = load('Data/Exp4/SA_AGData.npy')
 # print(data)
 ## costValue,controlCost,robustnessCost,executionTime,controlRobustness,obstacleRobustness,
 ## goalRobustness,numOfGreedyIter,robustnessCostStd,controlRobustnessStd,obstacleRobustnessStd,goalRobustnessStd,

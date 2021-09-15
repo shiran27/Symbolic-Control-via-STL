@@ -22,8 +22,8 @@ T = 20  #15, 20 number of timesteps
 x0 = np.asarray([0,0])[:,np.newaxis] # [0.5,5] for ReachAvoid4
 # scenario = ReachAvoid(x0,T)
 # scenario = ReachAvoidAdv(x0,T)
-# scenario = FollowTrajectory(x0,T)
-scenario = FollowTrajectoryAdv(x0,T)
+scenario = FollowTrajectory(x0,T)
+# scenario = FollowTrajectoryAdv(x0,T)
 
 # Autograd based and Explicit Gradient
 measureType = 2 # 0: Non-Smooth, 1: Standard Smooth, 2: Under Approx, 3: Over Approx, 4: Reversed Standard
@@ -42,8 +42,8 @@ np.random.seed(7)
 u_init = np.zeros((2,T+1)).flatten()   # initial guess
 
 
-numOfSimulations = 100
-numOfTrials = 5
+numOfSimulations = 500
+numOfTrials = 1
 executionTimesExplicit = []
 executionTimesAutoGrad = []
 # RMSError = []
@@ -53,23 +53,16 @@ sumErrorMat = []
 
 
 
+# Initialization
+# costFunctionExplicitGradGrad = grad(costFunctionGrad)
+# u = u_init 
+# print(costFunctionGrad(u)) 
+# for i in range(20):
+#     u = u + 50*costFunctionExplicitGradGrad(u)
+# print(costFunctionGrad(u))
+# u_init = u
+# End Initialization
 
-# sol = minimize(costFunction, u_init,
-#             jac = costFunctionExplicitGrad, # this is the function that gives the gradient (now, given by autograd library)
-#             method='SLSQP')
-
-costFunctionExplicitGradGrad = grad(costFunctionGrad)
-u = u_init 
-print(costFunctionGrad(u)) 
-for i in range(20):
-    u = u + 50*costFunctionExplicitGradGrad(u)
-print(costFunctionGrad(u))
-u_init = u
-
-# sol = minimize(costFunctionGrad, u_init,
-#             jac = costFunctionExplicitGradGrad, # this is the function that gives the gradient (now, given by autograd library)
-#             method='SLSQP')
-# print(u)
 
 valErrorsEG = []
 valErrorsAG = []
@@ -151,10 +144,10 @@ print("Mean log absolute Error Improvement: A-E")
 
 # print(np.mean(valErrorsEG),np.mean(valErrorsAG),logMeanAbsErrorImprovement)
 
-print(np.mean(valErrorsEG,axis=1))
-print(np.mean(valErrorsAG,axis=1))
-logMeanAbsErrorImprovement = np.mean(valErrorsAG,axis=1)-np.mean(valErrorsEG,axis=1)
-print(*logMeanAbsErrorImprovement)
+# print(np.mean(valErrorsEG,axis=1))
+# print(np.mean(valErrorsAG,axis=1))
+# logMeanAbsErrorImprovement = np.mean(valErrorsAG,axis=1)-np.mean(valErrorsEG,axis=1)
+# print(*logMeanAbsErrorImprovement)
 
 
 percentageMeanExecutionTimeImprovement = 100*(np.mean(executionTimesAutoGrad)-np.mean(executionTimesExplicit))/np.mean(executionTimesAutoGrad)
