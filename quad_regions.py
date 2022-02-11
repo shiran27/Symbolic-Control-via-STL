@@ -155,7 +155,8 @@ class PolyRegion:
 
             # i is passed as a default variables
             predicateRobustness = lambda s, t, theta, i=i : scalingFactor*self.predicates[i](s[t,0],s[t,1])
-            predicateRobustnessGrad = lambda s, t, theta, i=i : scalingFactor*np.asarray([[0 for j in range(len(s[0]))] if tau!=t else np.append(self.predicateGrads[i](s[t,0],s[t,1]),[0,0]).tolist() for tau in range(len(s))])
+            predicateRobustnessGrad = lambda s, t, theta, i=i : scalingFactor*np.asarray([[0 for j in range(len(s[0]))] if tau!=t else np.append(self.predicateGrads[i](s[t,0],s[t,1]),[0,0,0,0]).tolist() for tau in range(len(s))])
+            # predicateRobustnessGrad = lambda s, t, theta, i=i : scalingFactor*np.asarray([[0 for j in range(len(s[0]))] if tau!=t else np.append(self.predicateGrads[i](s[t,0],s[t,1]),[0,0]).tolist() for tau in range(len(s))])
 
             minBand = lambda s, t, theta : -theta
             maxBand = lambda s, t, theta : theta
@@ -185,8 +186,9 @@ class PolyRegion:
 
             # i is passed as a default variables (only dirrence compared to inRegion() is the -ve sign in following two lines)
             predicateRobustness = lambda s, t, theta, i=i : -1*scalingFactor*self.predicates[i](s[t,0],s[t,1])
-            predicateRobustnessGrad = lambda s, t, theta, i=i : scalingFactor*np.asarray([[0 for j in range(len(s[0]))] if tau!=t else (-1*np.append(self.predicateGrads[i](s[t,0],s[t,1]),[0,0])).tolist() for tau in range(len(s))])
+            predicateRobustnessGrad = lambda s, t, theta, i=i : scalingFactor*np.asarray([[0 for j in range(len(s[0]))] if tau!=t else (-1*np.append(self.predicateGrads[i](s[t,0],s[t,1]),[0,0,0,0])).tolist() for tau in range(len(s))])
             # predicateRobustnessGrad = lambda s, t, theta, i=i : scalingFactor*np.asarray([[0 for j in range(len(s[0]))] if tau!=t else (-1*np.append(self.predicateGrads[i](s[t,0],s[t,1]),[0,0])).tolist() for tau in range(len(s))])
+            
 
             minBand = lambda s, t, theta : -theta
             maxBand = lambda s, t, theta : theta
@@ -213,8 +215,8 @@ class PolyRegion:
             
             # i is passed as a default variables
             predicateRobustness = lambda s, t, theta, i=i: scalingFactor*self.predicates[i](s[t,2],s[t,3]) # we can add a noise term here if we want based on the magnitude of theta
-            # predicateRobustnessGrad = lambda s, t, theta, i=i: scalingFactor*np.asarray([[0 for i in range(len(s[0]))] if tau!=t else (np.append([0,0],self.predicateGrads[i](s[t,2],s[t,3])) if len(s)==4 else np.append([0,0],self.predicateGrads[i](s[t,2],s[t,3]),[0,0])).tolist() for tau in range(len(s))])
-            predicateRobustnessGrad = lambda s, t, theta, i=i: scalingFactor*np.asarray([[0 for i in range(len(s[0]))] if tau!=t else np.append([0,0],self.predicateGrads[i](s[t,2],s[t,3])).tolist() for tau in range(len(s))])
+            predicateRobustnessGrad = lambda s, t, theta, i=i: scalingFactor*np.asarray([[0 for i in range(len(s[0]))] if tau!=t else np.append(np.append([0,0],self.predicateGrads[i](s[t,2],s[t,3])),[0,0]).tolist() for tau in range(len(s))])
+            # predicateRobustnessGrad = lambda s, t, theta, i=i: scalingFactor*np.asarray([[0 for i in range(len(s[0]))] if tau!=t else np.append([0,0],self.predicateGrads[i](s[t,2],s[t,3])).tolist() for tau in range(len(s))])
 
             minBand = lambda s, t, theta : -theta
             maxBand = lambda s, t, theta : theta
@@ -242,7 +244,8 @@ class PolyRegion:
             
             # i is passed as a default variables
             predicateRobustness = lambda s, t, theta, i=i: scalingFactor*self.predicates[i](s[t,4],s[t,4]) # we can add a noise term here if we want based on the magnitude of theta
-            predicateRobustnessGrad = lambda s, t, theta, i=i: scalingFactor*np.asarray([[0 for i in range(len(s[0]))] if tau!=t else np.append([0,0],self.predicateGrads[i](s[t,4],s[t,5])).tolist() for tau in range(len(s))])
+            predicateRobustnessGrad = lambda s, t, theta, i=i: scalingFactor*np.asarray([[0 for i in range(len(s[0]))] if tau!=t else np.append([0,0,0,0],self.predicateGrads[i](s[t,4],s[t,5])).tolist() for tau in range(len(s))])
+            # predicateRobustnessGrad = lambda s, t, theta, i=i: scalingFactor*np.asarray([[0 for i in range(len(s[0]))] if tau!=t else np.append([0,0,0,0],self.predicateGrads[i](s[t,4],s[t,5])).tolist() for tau in range(len(s))])
 
             minBand = lambda s, t, theta : -theta
             maxBand = lambda s, t, theta : theta

@@ -1,6 +1,6 @@
 ##
 #
-# This file contains classes that define some simple examples of scenarios
+# This file contains classes that define some simple examples of scenarios for a double integrator model
 # Each example scenario has can have multiple robustness measures (smooth and non-smooth) (i.e., functions of the signal) 
 # Also each each example scenario can have other functions that are recursively defined like the ones for gradients approximation error bounds 
 # 
@@ -45,7 +45,7 @@ class ReachAvoid:
         goal = PolyRegion(2,'Goal',[[7,8],[8,8],[8,9],[7,9]],'green',0.5)
         aux = PolyRegion(3,'Aux',[[7,1],[8,1],[8.5,2],[7.5,3],[6.5,2]])
 
-        uMin, uMax = -1.0, 1.0 
+        uMin, uMax = -10.0, 10.0 
         controlBounds = PolyRegion(4,'Control',[[uMin,uMin],[uMax,uMin],[uMax,uMax],[uMin,uMax]],'green',0.5)
                 
 
@@ -69,6 +69,7 @@ class ReachAvoid:
         ## Bounding the control
         boundedControl = controlBounds.inControlRegion(requiredMeasureTypes) # we get a list of STLFormula collections
         self.boundedControl = STLFormulas.conjunction(boundedControl, requiredMeasureTypes).always(0, self.T) # we get one STLFormula collection
+
 
         ## Full specification
         fullSpec = [self.avoidedObstacle, self.reachedGoal, self.boundedControl]
@@ -142,10 +143,17 @@ class ReachAvoid:
         x = s[0,:]
         y = s[1,:]
 
-        ax.plot(x, y, label=label, linestyle="-", marker=".")
+        ax.plot(x[0],y[0],'*')
+        ax.plot(x, y, label=label, linestyle="-", marker="v")
+
+        
 
 
-    def getSignal(self, u):
+
+
+
+
+    def getSignal(self, u, withTheta=None):
         """ 
         Maps a control signal u and an initial condition to a signal we can check robustness, cost, error bounds, etc. 
         Composition of the signal we consider: (x,y) position of the robot and (u_x,u_yy) components of the control input.
@@ -156,26 +164,41 @@ class ReachAvoid:
         """
 
         # System definition: x_{t+1} = A*x_t + B*u_t
-        A = np.eye(2)    # single integrator
-        B = np.eye(2)
+        deltaT = 1  # sampling time
+        Z = np.zeros([2,2])
+        I = np.eye(2)
+        
+        A = np.block([[I, deltaT*I],[Z, I]]) # double integrator
+        B = np.block([[Z],[deltaT*I]])
+        # A = np.eye(2)    # single integrator
+        # B = np.eye(2)
 
         # number of timesteps
         T = u.shape[1]      
 
-        # Starting state
+        ## Starting state
         x = copy(self.x0)
-
-        # Signal that we'll check consists of both states and control inputs 
-        s = np.hstack([x.flatten(),u[:,0]])[np.newaxis].T
+        X_1t = x[0,0]
+        X_2t = x[1,0]     
+        
+        ## Signal that we'll check consists of both states and control inputs 
+        s = np.hstack([X_1t, X_2t, u[:,0]])[np.newaxis].T
+        # s = np.hstack([x.flatten(),u[:,0]])[np.newaxis].T
 
         # Run the controls through the system and see what we get
         for t in range(1,T):
             # Autograd doesn't support array assignment, so we can't pre-allocate s here
-            s_t = np.hstack([x.flatten(),u[:,t]])[np.newaxis].T
+
+            ## Update the signal
+            s_t = np.hstack([X_1t,X_2t,u[:,t]])[np.newaxis].T
+            # s_t = np.hstack([x.flatten(),u[:,t]])[np.newaxis].T
             s = np.hstack([s,s_t])
 
-            # Update the system state
+
+            ## Update the system state
             x = A@x + B@u[:,t][:,np.newaxis]   # ensure u is of shape (2,1) before applying
+            X_1t = x[0,0]
+            X_2t = x[1,0]
 
         return s
 
@@ -316,9 +339,11 @@ class ReachAvoid:
         # transfer matrix required for partial y / partial u
         I = np.eye(2)
         O = np.zeros((2,2))
-        # return np.block([[I if t>tau else O for tau in range(T+1)] for t in range(T+1)])
-        return np.block([[I if t>tau and tau>0 else O for tau in range(T+1)] for t in range(T+1)])
-
+        
+        ## only the following line needs to be changed if the agent dynamics were changes (assuming still have two outputs)
+        return np.block([[(t-tau-1)*I if t>tau and tau>0 else O for tau in range(T+1)] for t in range(T+1)]) # double integrator
+        # return np.block([[I if t>tau and tau>0 else O for tau in range(T+1)] for t in range(T+1)]) # single integrator
+        # return np.block([[I if t>tau else O for tau in range(T+1)] for t in range(T+1)]) # old - delete
 
     def getRobustnessGrad(self, controlInput, measureType, spec=None):
         signal = self.getSignal(controlInput)
@@ -343,6 +368,7 @@ class ReachAvoid:
         robustnessGradU = robustnessGrad[:,2:4] 
         # print(robustnessGradU)
         
+        
         actualGrad = robustnessGradU + np.reshape( robustnessGradY.flatten()@self.transferMatrixYtoU, (len(signal.T),2))
 
         costFunctionGrad = 2*0.01*controlInput.T - actualGrad  
@@ -366,7 +392,7 @@ class ReachAvoid:
         """
 
         # Add a small control penalty
-        controlCost = 0.01 * controlInput.T @ controlInput
+        controlCost = 0.01 * controlInput.T @ controlInput 
 
         # Reshape the control input to (mxT). Vector input is required for some optimization libraries
         T = int(len(controlInput)/2)
@@ -376,7 +402,7 @@ class ReachAvoid:
 
 
 ## Special scenario for the quadcopter
-class Quad_ReachAvoid(ReachAvoid):
+class ReachAvoid_Zihao(ReachAvoid):
 
     def __init__(self, initial_state, T=20):
         """
@@ -392,7 +418,7 @@ class Quad_ReachAvoid(ReachAvoid):
         goal1 = PolyRegion(3,'Goal',[[5,0],[6,0],[6,2],[5,2]],'blue',0.5)
         goal2 = PolyRegion(4,'Goal',[[7,-4],[8,-4],[8,-2],[7,-2]],'blue',0.5)
         
-        uMin, uMax = -10.0, 10.0 
+        uMin, uMax = -10.0, 10.0  
         controlBounds = PolyRegion(4,'Control',[[uMin,uMin],[uMax,uMin],[uMax,uMax],[uMin,uMax]],'green',0.5)
 
         requiredMeasureTypes = [0,1,2,3,4] # 0: absolut, 1:Std smooth, 2:Under Approx, 3:Over Approx, 4: Reveresd
@@ -408,8 +434,8 @@ class Quad_ReachAvoid(ReachAvoid):
         avoidedObstacle = [avoidObstacle]
         self.avoidedObstacle = STLFormulas.conjunction(avoidedObstacle, requiredMeasureTypes).always(0, self.T) # we get one STLFormula collection
         
-        t1 = 6 
-        t2 = 8 
+        t1 = 10 
+        t2 = 12 
         t3 = 14
 
         ## Reaching the Goals
@@ -436,9 +462,23 @@ class Quad_ReachAvoid(ReachAvoid):
 
         ## Store things to draw
         # self.regions = [obstacle, goal, aux]
-        self.regions = [obs1,obs2,obs3,goal]
+        self.regions = [obstacle, goal1, goal2]
         self.controlBounds = controlBounds
         self.requiredMeasureTypes = requiredMeasureTypes
+
+
+    ## Overwriting the original draw function (due to custom axis limits)
+    def draw(self, ax):
+        """
+        Create a plot of the obstacle and goal regions on
+        the given matplotlib axis.
+        """
+        ax.set_xlim((-3,12))  #(0,12)
+        ax.set_ylim((-3,12))
+        ax.axis('equal')
+
+        for poly in self.regions:
+            poly.draw(ax)
 
 
 class ReachAvoidAdv(ReachAvoid):
@@ -460,7 +500,7 @@ class ReachAvoidAdv(ReachAvoid):
         goal = PolyRegion(4,'Goal',PolyRegion.getPolyCoordinates([9,9],3,0.75,np.pi/4),'green',0.5)
         
 
-        uMin, uMax = -1.0, 1.0 
+        uMin, uMax = -200.0, 200.0 
         controlBounds = PolyRegion(5,'Control',[[uMin,uMin],[uMax,uMin],[uMax,uMax],[uMin,uMax]],'green',0.5)
                 
 
@@ -524,7 +564,7 @@ class FollowTrajectory(ReachAvoid):
         goal2 = PolyRegion(3,'Goal2',PolyRegion.getPolyCoordinates([8,5],3,1.5,np.pi/2+0.1),'green',0.5)
         goal3 = PolyRegion(4,'Goal3',PolyRegion.getPolyCoordinates([5,8],3,1.5,np.pi+0.1),'green',0.5)
         
-        uMin, uMax = -2.0, 2.0        
+        uMin, uMax = -200.0, 200.0        
         controlBounds = PolyRegion(5,'Control',[[uMin,uMin],[uMax,uMin],[uMax,uMax],[uMin,uMax]],'green',0.5)
                 
         requiredMeasureTypes = [0,1,2,3,4] # 0: absolut, 1:Std smooth, 2:Under Approx, 3:Over Approx, 4: Reveresd
@@ -603,7 +643,7 @@ class FollowTrajectoryAdv(ReachAvoid):
         goal2 = PolyRegion(8,'Goal2',PolyRegion.getPolyCoordinates([7.5,7.5],3,1.2,3*np.pi/4),'green',0.5)
         goal3 = PolyRegion(9,'Goal3',PolyRegion.getPolyCoordinates([2.5,7.5],3,1.2,5*np.pi/4),'green',0.5)
         
-        uMin, uMax = -2.0, 2.0        
+        uMin, uMax = -200.0, 200.0        
         controlBounds = PolyRegion(5,'Control',[[uMin,uMin],[uMax,uMin],[uMax,uMax],[uMin,uMax]],'green',0.5)
                 
         requiredMeasureTypes = [0,1,2,3,4] # 0: absolut, 1:Std smooth, 2:Under Approx, 3:Over Approx, 4: Reveresd

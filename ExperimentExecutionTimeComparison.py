@@ -20,13 +20,13 @@ from statistics import *
 # initialize the example with an initial state
 T = 20  #15, 20 number of timesteps
 x0 = np.asarray([0,0])[:,np.newaxis] # [0.5,5] for ReachAvoid4
-# scenario = ReachAvoid(x0,T)
+scenario = ReachAvoid(x0,T)
 # scenario = ReachAvoidAdv(x0,T)
-scenario = FollowTrajectory(x0,T)
+# scenario = FollowTrajectory(x0,T)
 # scenario = FollowTrajectoryAdv(x0,T)
 
 # Autograd based and Explicit Gradient
-measureType = 2 # 0: Non-Smooth, 1: Standard Smooth, 2: Under Approx, 3: Over Approx, 4: Reversed Standard
+measureType = 1 # 0: Non-Smooth, 1: Standard Smooth, 2: Under Approx, 3: Over Approx, 4: Reversed Standard
 def costFunction(u,measureType=measureType):
     return scenario.costFunction(u,measureType)
 
@@ -42,7 +42,7 @@ np.random.seed(7)
 u_init = np.zeros((2,T+1)).flatten()   # initial guess
 
 
-numOfSimulations = 500
+numOfSimulations = 1#500
 numOfTrials = 1
 executionTimesExplicit = []
 executionTimesAutoGrad = []
